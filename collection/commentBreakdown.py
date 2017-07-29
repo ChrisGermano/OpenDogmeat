@@ -8,27 +8,17 @@ import dogmeat_config as conf
 
 from string import punctuation
 
-saveToDatabase = 0
-subreddit = 'all'
+saveToDatabase = 1
+sub_param = 'all'
+num_results = 1
 
-if len(sys.argv) < 3:
-    print "Insufficient parameters: [s/ns] [subreddit]"
-    sys.exit()
-
-if sys.argv[1] != None and sys.argv[1] == "s":
-    saveToDatabase = 1
-
-reg = re.compile('[a-zA-Z]')
-
-
-#Currently unused
 def getAverage(values):
     sum = 0
     for val in values:
         sum = sum + val
     return sum/len(values)
 
-r = praw.Reddit(client_id='ISzz1t_bW6A9PA',
+r = praw.Reddit(client_id=conf.CLIENT_ID,
     client_secret=conf.CLIENT_SECRET,
     password=conf.PASSWORD,
     user_agent=conf.USER_AGENT,
@@ -40,8 +30,6 @@ connection = pymysql.connect(host='localhost',
     db=conf.DB,
     charset='utf8mb4',
     cursorclass=pymysql.cursors.DictCursor)
-
-subreddit=r.get_subreddit('indiegames')
 
 #Referenced this great beginner tutorial, will move to an original dictionary soon
 #http://nealcaren.web.unc.edu/an-introduction-to-text-analysis-with-python-part-1/
@@ -62,62 +50,66 @@ negative_counts = []
 
 comment_lengths = []
 
-try:
-    with connection.cursor() as cursor:
+def collect(save_data, sub, num_res):
 
-        for submission in subreddit.get_top_from_week(limit=1):
+    subreddit = r.get_subreddit(sub)
 
-            submission.replace_more_comments(limit=None, threshold=0)
+    print "Analyzing top " + str(num_res) + " posts from r/" + sub
 
-            comments = praw.helpers.flatten_tree(submission.comments)
+    try:
+        with connection.cursor() as cursor:
 
-            for comment in comments:
+            for submission in subreddit.get_top_from_week(limit=num_res):
 
-                positive_count = 0
-                negative_count = 0
+                submission.replace_more_comments(limit=None, threshold=0)
+                comments = praw.helpers.flatten_tree(submission.comments)
 
-                lc = comment.body
+                for comment in comments:
 
-                for p in list(punctuation):
-                  lc = lc.replace(p,'')
+                    positive_count = 0
+                    negative_count = 0
 
-                words = lc.split(' ')
+                    lc = comment.body
 
-                word_count = len(words)
+                    for p in list(punctuation):
+                      lc = lc.replace(p,'')
 
-                for word in words:
-                    if word in positive_words:
-                        positive_count = positive_count + 1
-                    elif word in negative_words:
-                        negative_count = negative_count + 1
+                    words = lc.split(' ')
+                    word_count = len(words)
 
-                positive_counts.append(positive_count/word_count)
-                negative_counts.append(negative_count/word_count)
+                    for word in words:
+                        if word in positive_words:
+                            positive_count = positive_count + 1
+                        elif word in negative_words:
+                            negative_count = negative_count + 1
 
-                comment_lengths.append(word_count)
+                    positive_counts.append(positive_count/word_count)
+                    negative_counts.append(negative_count/word_count)
 
-                cb = str(comment.body)
-                wc = str(word_count)
-                pc = str(positive_count)
-                nc = str(negative_count)
-                si = str(submission.id)
+                    comment_lengths.append(word_count)
 
-                sql = "INSERT IGNORE INTO submission_comment(text,words,positives,negatives,submission_id) VALUES (%s,%s,%s,%s,%s);"
-                cursor.execute(sql, (cb,wc,pc,nc,si))
+                    cb = str(comment.body)
+                    wc = str(word_count)
+                    pc = str(positive_count)
+                    nc = str(negative_count)
+                    si = str(submission.id)
+
+                    sql = "INSERT IGNORE INTO submission_comment(text,words,positives,negatives,submission_id) VALUES (%s,%s,%s,%s,%s);"
+                    cursor.execute(sql, (cb,wc,pc,nc,si))
+                    connection.commit()
+
+                sub_url = None
+                sub_text = None
+
+                if submission.selftext != '':
+                    sub_text = submission.selftext
+                else:
+                    sub_url = submission.url
+
+                sql = "INSERT IGNORE INTO submission(title,submission_id,author,url,text) VALUES (%s,%s,%s,%s,%s);"
+                cursor.execute(sql,(submission.title,submission.id,submission.author.name,sub_url,sub_text))
+
                 connection.commit()
 
-            sub_url = None
-            sub_text = None
-
-            if submission.selftext != '':
-                sub_text = submission.selftext
-            else:
-                sub_url = submission.url
-
-            sql = "INSERT IGNORE INTO submission(title,submission_id,author,url,text) VALUES (%s,%s,%s,%s,%s);"
-            cursor.execute(sql,(submission.title,submission.id,submission.author.name,sub_url,sub_text))
-
-            connection.commit()
-
-finally:
-    connection.close()
+    finally:
+        connection.close()
