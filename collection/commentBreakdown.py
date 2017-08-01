@@ -1,6 +1,6 @@
 from __future__ import division
 
-import praw, pymysql.cursors, codecs, string, re, urllib, sys
+import praw, pymysql.cursors, codecs, string, re, sys
 
 sys.path.append('../')
 
@@ -35,9 +35,6 @@ connection = pymysql.connect(host='localhost',
 #http://nealcaren.web.unc.edu/an-introduction-to-text-analysis-with-python-part-1/
 files=['negative.txt','positive.txt']
 path='http://www.unc.edu/~ncaren/haphazard/'
-
-for file in files:
-    urllib.urlretrieve(path+file,file)
 
 pos_sent = open('positive.txt').read()
 positive_words = pos_sent.split('\n')
